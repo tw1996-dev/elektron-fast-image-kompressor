@@ -1,0 +1,359 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Courier New', 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', monospace;
+    background: #0a0a0a;
+    background-image: 
+        radial-gradient(circle at 20% 50%, rgba(0, 255, 255, 0.1) 0%, transparent 50%),
+        radial-gradient(circle at 80% 20%, rgba(255, 0, 255, 0.1) 0%, transparent 50%),
+        radial-gradient(circle at 40% 80%, rgba(0, 255, 0, 0.05) 0%, transparent 50%);
+    min-height: 100vh;
+    overflow: hidden;
+    color: #00ffff;
+}
+
+.container {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+    max-width: 900px;
+    margin: 0 auto;
+    position: relative;
+}
+
+.container::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: 
+        linear-gradient(0deg, transparent 24%, rgba(0, 255, 255, 0.03) 25%, rgba(0, 255, 255, 0.03) 26%, transparent 27%, transparent 74%, rgba(0, 255, 255, 0.03) 75%, rgba(0, 255, 255, 0.03) 76%, transparent 77%, transparent),
+        linear-gradient(90deg, transparent 24%, rgba(0, 255, 255, 0.03) 25%, rgba(0, 255, 255, 0.03) 26%, transparent 27%, transparent 74%, rgba(0, 255, 255, 0.03) 75%, rgba(0, 255, 255, 0.03) 76%, transparent 77%, transparent);
+    background-size: 50px 50px;
+    pointer-events: none;
+    z-index: 1;
+}
+
+header {
+    text-align: center;
+    margin-bottom: 40px;
+    color: #00ffff;
+    z-index: 2;
+    position: relative;
+}
+
+header h1 {
+    font-size: 3rem;
+    font-weight: 900;
+    margin-bottom: 15px;
+    letter-spacing: 2px;
+    font-family: 'Courier New', monospace;
+}
+
+header p {
+    font-size: 1.2rem;
+    opacity: 0.8;
+    color: #00ff88;
+    letter-spacing: 1px;
+    font-weight: 500;
+    text-wrap: balance;
+}
+
+main {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    position: relative;
+}
+
+.drop-zone {
+    width: 100%;
+    max-width: 500px;
+    height: 300px;
+    border: 2px solid #00ffff;
+    border-radius: 0px;
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(10px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    position: relative;
+    box-shadow: 
+        inset 0 0 20px rgba(0, 255, 255, 0.2),
+        0 0 20px rgba(0, 255, 255, 0.3);
+}
+
+.drop-zone:hover,
+.drop-zone.drag-over {
+    border-color: #ff00ff;
+    box-shadow: 
+        inset 0 0 20px rgba(255, 0, 255, 0.3),
+        0 0 30px rgba(255, 0, 255, 0.5);
+    background: rgba(20, 0, 20, 0.9);
+}
+
+.drop-zone::before {
+    content: '';
+    position: absolute;
+    top: -2px;
+    left: -2px;
+    right: -2px;
+    bottom: -2px;
+    background: linear-gradient(45deg, #00ffff, #ff00ff, #00ff00, #ffff00);
+    z-index: -1;
+    border-radius: 0px;
+}
+
+.drop-zone::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.8);
+    border-radius: 0px;
+}
+
+.drop-content {
+    text-align: center;
+    color: #00ffff;
+    z-index: 1;
+    position: relative;
+}
+
+.drop-icon {
+    font-size: 4rem;
+    margin-bottom: 20px;
+    filter: drop-shadow(0 0 10px #00ffff);
+}
+
+.drop-content h3 {
+    font-size: 1.8rem;
+    margin-bottom: 15px;
+    font-weight: 700;
+    text-shadow: 0 0 10px #00ffff;
+    letter-spacing: 1px;
+}
+
+.drop-content p {
+    font-size: 0.9rem;
+    opacity: 0.7;
+    margin-bottom: 25px;
+    color: #00ff88;
+    letter-spacing: 0.5px;
+}
+
+.select-btn {
+    background: transparent;
+    border: 2px solid #00ffff;
+    color: #00ffff;
+    padding: 15px 30px;
+    border-radius: 0px;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 600;
+    font-family: 'Courier New', monospace;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    position: relative;
+    overflow: hidden;
+}
+
+.select-btn:hover {
+    color: #000;
+    background: #00ffff;
+    box-shadow: 0 0 20px #00ffff;
+}
+
+.progress-section {
+    width: 100%;
+    max-width: 500px;
+    background: rgba(0, 0, 0, 0.9);
+    border: 2px solid #00ff88;
+    border-radius: 0px;
+    padding: 40px;
+    box-shadow: 
+        inset 0 0 20px rgba(0, 255, 136, 0.2),
+        0 0 30px rgba(0, 255, 136, 0.3);
+    text-align: center;
+}
+
+.progress-info h3 {
+    font-size: 1.5rem;
+    margin-bottom: 20px;
+    color: #00ff88;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-shadow: 0 0 10px #00ff88;
+}
+
+.progress-stats {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 25px;
+    font-size: 1rem;
+    color: #00ffff;
+    font-family: 'Courier New', monospace;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 15px;
+    background: rgba(0, 255, 255, 0.1);
+    border: 1px solid #00ffff;
+    border-radius: 0px;
+    overflow: hidden;
+    margin-bottom: 15px;
+    position: relative;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #00ffff, #00ff88);
+    width: 0%;
+    border-radius: 0px;
+    box-shadow: 0 0 15px rgba(0, 255, 255, 0.7);
+    transition: width 0.3s ease-out;
+}
+
+.progress-percent {
+    font-size: 1.3rem;
+    font-weight: 700;
+    margin-bottom: 25px;
+    color: #00ff88;
+    font-family: 'Courier New', monospace;
+    text-shadow: 0 0 10px #00ff88;
+}
+
+.cancel-btn {
+    background: transparent;
+    border: 2px solid #ff0080;
+    color: #ff0080;
+    padding: 12px 25px;
+    border-radius: 0px;
+    cursor: pointer;
+    font-size: 1rem;
+    font-family: 'Courier New', monospace;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+}
+
+.cancel-btn:hover {
+    background: #ff0080;
+    color: #000;
+    box-shadow: 0 0 20px #ff0080;
+}
+
+.results-section {
+    width: 100%;
+    max-width: 500px;
+}
+
+.result {
+    border: 2px solid #00ff88;
+    border-radius: 0px;
+    padding: 40px;
+    text-align: center;
+    background: rgba(0, 0, 0, 0.9);
+    box-shadow: 
+        inset 0 0 20px rgba(0, 255, 136, 0.2),
+        0 0 30px rgba(0, 255, 136, 0.3);
+}
+
+.result h3 {
+    font-size: 1.8rem;
+    margin-bottom: 25px;
+    color: #00ff88;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-shadow: 0 0 10px #00ff88;
+}
+
+#resultStats {
+    background: rgba(0, 255, 255, 0.1);
+    border: 1px solid #00ffff;
+    padding: 20px;
+    border-radius: 0px;
+    margin-bottom: 25px;
+    font-size: 1rem;
+    color: #00ffff;
+    font-family: 'Courier New', monospace;
+    line-height: 1.8;
+    text-align: left;
+}
+
+.stats-divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, #00ffff, transparent);
+    margin: 15px 0;
+    opacity: 0.6;
+}
+
+.result-label {
+    color: #00ff88;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 700;
+    display: inline-block;
+    min-width: 140px;
+}
+
+.result-value {
+    color: #00ffff;
+    font-weight: 500;
+    word-break: break-all;
+}
+
+.result-highlight {
+    color: #00ff88 !important;
+    font-weight: 700;
+    text-shadow: 0 0 8px rgba(0, 255, 136, 0.6);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.result-success {
+    color: #00ff88;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    text-align: center;
+    margin-top: 15px;
+    text-shadow: 0 0 10px #00ff88;
+}
+
+.new-btn, 
+.retry-btn {
+    background: transparent;
+    border: 2px solid #00ffff;
+    color: #00ffff;
+    padding: 15px 30px;
+    border-radius: 0px;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 600;
+    font-family: 'Courier New', monospace;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+}
+
+.new-btn:hover,
+.retry-btn:hover {
+    background: #00ffff;
+    color: #000;
+    box-shadow: 0 0 20px #00ffff;
+}
+
+.hidden {
+    display: none !important;
+}

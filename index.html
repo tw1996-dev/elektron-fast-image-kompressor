@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Elektron Fast Image Kompressor</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>Elektron Image Kompressor</h1>
+            <p>Drag and drop a folder with images to compress them to WebP</p>
+            <p>Save 90% of space</p>
+        </header>
+
+        <main>
+            <div id="dropZone" class="drop-zone">
+                <div class="drop-content">
+                    <div class="drop-icon">📁</div>
+                    <h3>Drag folder here</h3>
+                    <p>Supported formats: JPG, PNG, GIF, SVG, TIFF, BMP</p>
+                    <button id="selectButton" class="select-btn">Or select folder</button>
+                </div>
+            </div>
+
+            <div id="progressSection" class="progress-section hidden">
+                <div class="progress-info">
+                    <h3 id="progressTitle">Processing...</h3>
+                    <div id="progressStats" class="progress-stats">
+                        <span id="currentFile">--</span>
+                        <span id="fileCounter">0/0</span>
+                    </div>
+                </div>
+                <div class="progress-bar">
+                    <div id="progressFill" class="progress-fill"></div>
+                </div>
+                <div id="progressPercent" class="progress-percent">0%</div>
+                <button id="cancelButton" class="cancel-btn">Cancel</button>
+            </div>
+
+            <div id="resultsSection" class="results-section hidden">
+                <div id="successResult" class="result success hidden">
+                    <h3>✅ Compression completed!</h3>
+                    <div id="resultStats"></div>
+                    <button id="newCompressionButton" class="new-btn">Compress more</button>
+                </div>
+                <div id="errorResult" class="result error hidden">
+                    <h3>❌ An error occurred</h3>
+                    <div id="errorMessage"></div>
+                    <button id="retryButton" class="retry-btn">Try again</button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="renderer.js"></script>
+</body>
+
+</html>

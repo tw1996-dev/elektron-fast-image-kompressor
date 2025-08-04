@@ -1,0 +1,46 @@
+{
+  "name": "elektron-fast-image-kompressor",
+  "version": "1.0.0",
+  "description": "Fast desktop image compressor - converts all image formats to WebP",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder",
+    "dist": "electron-builder --publish=never"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tw1996-dev/elektron-fast-image-kompressor.git"
+  },
+  "keywords": ["electron", "image", "compression", "webp", "converter"],
+  "author": "tw1996-dev",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/tw1996-dev/elektron-fast-image-kompressor/issues"
+  },
+  "homepage": "https://github.com/tw1996-dev/elektron-fast-image-kompressor#readme",
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.0.0"
+  },
+  "dependencies": {
+    "imagemin": "^8.0.1",
+    "imagemin-webp": "^8.0.0",
+    "imagemin-mozjpeg": "^10.0.0",
+    "imagemin-pngquant": "^10.0.0",
+    "imagemin-gifsicle": "^7.0.0",
+    "imagemin-svgo": "^10.0.1"
+  },
+  "build": {
+    "appId": "com.tw1996dev.elektron-fast-image-kompressor",
+    "productName": "Elektron Fast Image Kompressor",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "**/*",
+      "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}"
+    ]
+  }
+}
