@@ -8,7 +8,32 @@
  * - Communication with main process via electronAPI
  * - User interactions (buttons, events)
  * - File processing workflow coordination
+ * - Real cancellation support
  */
+
+
+// Custom Title Bar Controls
+const minimizeBtn = document.getElementById('minimizeBtn');
+const maximizeBtn = document.getElementById('maximizeBtn');
+const closeBtn = document.getElementById('closeBtn');
+
+// Window control functions
+minimizeBtn.addEventListener('click', () => {
+   window.electronAPI.minimizeWindow();
+});
+
+maximizeBtn.addEventListener('click', () => {
+   window.electronAPI.maximizeWindow();
+});
+
+closeBtn.addEventListener('click', () => {
+   window.electronAPI.closeWindow();
+});
+
+// Update maximize button icon based on window state
+window.electronAPI.onWindowStateChange((isMaximized) => {
+   maximizeBtn.textContent = isMaximized ? '❐' : '□';
+});
 
 // DOM elements
 const dropZone = document.getElementById('dropZone');
@@ -33,6 +58,7 @@ const resultStats = document.getElementById('resultStats');
 const errorMessage = document.getElementById('errorMessage');
 
 let isProcessing = false;
+let isCancelling = false;
 let selectedFolderPath = null;
 let startTime = null;
 let timerInterval = null;
@@ -93,11 +119,25 @@ selectButton.addEventListener('click', async () => {
     }
 });
 
-// Cancel button
-cancelButton.addEventListener('click', () => {
-    if (isProcessing) {
-        // TODO: Implement cancellation logic
-        resetToInitialState();
+// Cancel button - REAL CANCELLATION
+cancelButton.addEventListener('click', async () => {
+    if (isProcessing && !isCancelling) {
+        console.log('=== CANCELLATION REQUESTED ===');
+        isCancelling = true;
+        
+        // Update UI immediately to show cancelling state
+        progressTitle.textContent = 'Cancelling...';
+        currentFile.textContent = 'Stopping compression...';
+        cancelButton.textContent = 'Cancelling...';
+        cancelButton.disabled = true;
+        
+        try {
+            // Send cancellation signal to main process
+            await window.electronAPI.cancelCompression();
+            console.log('=== CANCELLATION SIGNAL SENT ===');
+        } catch (error) {
+            console.error('Error sending cancellation signal:', error);
+        }
     }
 });
 
@@ -113,7 +153,7 @@ retryButton.addEventListener('click', () => {
 
 // Real-time timer update function
 function updateTimer() {
-    if (!startTime || !lastProgressUpdate.total || !lastProgressUpdate.current) return;
+    if (!startTime || !lastProgressUpdate.total || !lastProgressUpdate.current || isCancelling) return;
     
     const now = Date.now();
     const elapsed = (now - startTime) / 1000; // seconds
@@ -143,8 +183,10 @@ function updateTimer() {
         }
         
         // Update only timer part of title
-        progressTitle.textContent = 'Processing images...' + timeRemaining;
-    } else if (elapsed < 5) {
+        if (!isCancelling) {
+            progressTitle.textContent = 'Processing images...' + timeRemaining;
+        }
+    } else if (elapsed < 5 && !isCancelling) {
         // Show "calculating..." for first few seconds
         progressTitle.textContent = 'Processing images... • calculating time...';
     }
@@ -161,6 +203,7 @@ async function startCompression(folderPath) {
     }
     startTime = null;
     lastProgressUpdate = { current: 0, total: 0, rate: 0 };
+    isCancelling = false;
 
     isProcessing = true;
     showProgressSection();
@@ -171,14 +214,32 @@ async function startCompression(folderPath) {
         const result = await window.electronAPI.compressImages(folderPath);
         
         if (result.success) {
-            showSuccess(result);
+            if (result.cancelled) {
+                showCancellationResult();
+            } else {
+                showSuccess(result);
+            }
         } else {
-            showError(result.error || 'Unknown error occurred');
+            if (result.cancelled) {
+                showCancellationResult();
+            } else {
+                showError(result.error || 'Unknown error occurred');
+            }
         }
     } catch (error) {
-        showError('Compression failed: ' + error.message);
+        if (isCancelling) {
+            showCancellationResult();
+        } else {
+            showError('Compression failed: ' + error.message);
+        }
     } finally {
         isProcessing = false;
+        isCancelling = false;
+        
+        // Reset cancel button
+        cancelButton.textContent = 'Cancel';
+        cancelButton.disabled = false;
+        
         // Clean up progress listener and timer
         window.electronAPI.removeAllListeners('compression-progress');
         if (timerInterval) {
@@ -190,6 +251,8 @@ async function startCompression(folderPath) {
 
 // Update progress display
 function updateProgress(current, total, percent, currentFileName) {
+    if (isCancelling) return; // Don't update progress during cancellation
+    
     // Initialize start time and timer on first real progress
     if (startTime === null && current > 0) {
         startTime = Date.now();
@@ -213,6 +276,24 @@ function updateProgress(current, total, percent, currentFileName) {
     
     // Update timer immediately too
     updateTimer();
+}
+
+// Show cancellation result
+function showCancellationResult() {
+    hideAllSections();
+    resultsSection.classList.remove('hidden');
+    errorResult.classList.remove('hidden');
+    
+    // Update error result to show cancellation
+    const errorTitle = errorResult.querySelector('h3');
+    errorTitle.textContent = '⏹️ Compression cancelled';
+    errorTitle.style.color = '#ff8800'; // Orange color for cancellation
+    
+    errorMessage.textContent = 'Compression was cancelled by user. No files were processed.';
+    
+    // Change retry button text
+    const retryBtn = document.getElementById('retryButton');
+    retryBtn.textContent = 'Start new compression';
 }
 
 // Show success result
@@ -246,7 +327,17 @@ function showError(error) {
     hideAllSections();
     resultsSection.classList.remove('hidden');
     errorResult.classList.remove('hidden');
+    
+    // Reset error styling (in case it was changed for cancellation)
+    const errorTitle = errorResult.querySelector('h3');
+    errorTitle.textContent = '❌ An error occurred';
+    errorTitle.style.color = ''; // Reset to default color
+    
     errorMessage.textContent = error;
+    
+    // Reset retry button text
+    const retryBtn = document.getElementById('retryButton');
+    retryBtn.textContent = 'Try again';
 }
 
 // Show progress section
@@ -268,7 +359,12 @@ function hideAllSections() {
 // Reset to initial state
 function resetToInitialState() {
     isProcessing = false;
+    isCancelling = false;
     selectedFolderPath = null;
+    
+    // Reset cancel button
+    cancelButton.textContent = 'Cancel';
+    cancelButton.disabled = false;
     
     // Cleanup timer
     if (timerInterval) {
@@ -283,12 +379,14 @@ function resetToInitialState() {
 
 // Setup progress listener
 window.electronAPI.onCompressionProgress((progressData) => {
-    updateProgress(
-        progressData.current,
-        progressData.total,
-        progressData.percent,
-        progressData.message
-    );
+    if (!isCancelling) {
+        updateProgress(
+            progressData.current,
+            progressData.total,
+            progressData.percent,
+            progressData.message
+        );
+    }
 });
 
 // Initialize app

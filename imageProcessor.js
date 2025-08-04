@@ -1,18 +1,19 @@
 /*
-* imageProcessor.js - Image Compression Engine
+* imageProcessor.js - Sharp Sequential Image Compression Engine
 * 
 * Handles:
-* - Batch processing of images with auto-detect memory optimization
+* - Sequential processing with Sharp (native C++ performance)
+* - Memory-safe streaming processing
+* - Smart progress updates with ETA calculation
+* - Fallback sanitizer for problematic filenames
 * - Multi-format support (JPG, PNG, GIF, SVG, TIFF, BMP) to WebP conversion
-* - Smart output folder naming and creation
-* - Progress tracking and error handling
-* - Memory-efficient chunked processing for thousands of files
-* - File size analysis and compression statistics
+* - Maximum speed with Sharp's native optimization
+* - Real cancellation support with cleanup
 */
 
 const path = require('path');
 const fs = require('fs').promises;
-const os = require('os');
+const sharp = require('sharp');
 const FileNameSanitizer = require('./fileNameSanitizer');
 const FileSizeAnalyzer = require('./fileSizeAnalyzer');
 
@@ -21,97 +22,104 @@ class ImageProcessor {
        this.supportedFormats = ['.jpg', '.jpeg', '.png', '.gif', '.svg', '.tiff', '.tif', '.bmp', '.webp'];
        this.isCancelled = false;
        this.progressCallback = null;
-       this.imagemin = null;
-       this.plugins = null;
        this.sanitizer = new FileNameSanitizer();
        this.sizeAnalyzer = new FileSizeAnalyzer();
+       
+       // Pipeline optimization settings
+       this.processingStartTime = null;
+       this.processedCount = 0;
+       this.avgProcessingTime = 0;
+       
+       // Cancellation tracking
+       this.currentOutputPath = null;
+       this.tempDirectories = [];
+       
+       // Sharp configuration
+       this.initializeSharp();
    }
 
-   // Dynamic import of ES modules
-   async initializeImagemin() {
-       if (this.imagemin) return; // Already initialized
+   // Initialize Sharp with optimal settings
+   initializeSharp() {
+       console.log('=== INITIALIZING SHARP ===');
+       
+       // Configure Sharp for maximum performance
+       sharp.cache(false); // Disable cache for sequential processing
+       sharp.concurrency(1); // Sequential processing
+       sharp.simd(true); // Enable SIMD
+       
+       console.log('Sharp initialized with maximum speed settings');
+   }
 
-       try {
-           console.log('=== INITIALIZING IMAGEMIN MODULES ===');
-           // Dynamic imports for ES modules
-           const imageminModule = await import('imagemin');
-           console.log('Imagemin module loaded');
-           
-           const imageminWebpModule = await import('imagemin-webp');
-           console.log('WebP plugin loaded');
-           
-           const imageminMozjpegModule = await import('imagemin-mozjpeg');
-           console.log('MozJPEG plugin loaded');
-           
-           const imageminPngquantModule = await import('imagemin-pngquant');
-           console.log('PNGQuant plugin loaded');
-           
-           const imageminGifsicleModule = await import('imagemin-gifsicle');
-           console.log('Gifsicle plugin loaded');
-           
-           const imageminSvgoModule = await import('imagemin-svgo');
-           console.log('SVGO plugin loaded');
+   // Get Sharp WebP settings optimized for speed and quality
+   getWebPSettings(inputFormat, inputPath) {
+       // Optimized for speed while maintaining quality
+       const baseSettings = {
+           quality: 75,
+           effort: 1, // Fastest compression (was 4)
+           alphaQuality: 75,
+           lossless: false
+       };
 
-           this.imagemin = imageminModule.default;
-           
-           this.plugins = [
-               imageminWebpModule.default({ 
-                   quality: 75,
-                   method: 6,
-                   alphaQuality: 75
-               }),
-               imageminMozjpegModule.default({ quality: 85 }),
-               imageminPngquantModule.default({ quality: [0.6, 0.8] }),
-               imageminGifsicleModule.default({ optimizationLevel: 3 }),
-               imageminSvgoModule.default({
-                   plugins: [
-                       { name: 'removeViewBox', active: false }
-                   ]
-               })
-           ];
-           
-           console.log('All imagemin modules initialized successfully');
-           console.log('========================================');
-       } catch (error) {
-           console.error('Failed to initialize imagemin:', error);
-           throw new Error(`Failed to initialize imagemin: ${error.message}`);
+       // Simplified settings for maximum speed
+       switch (inputFormat.toLowerCase()) {
+           case '.png':
+               return {
+                   ...baseSettings,
+                   quality: 80,
+                   alphaQuality: 80,
+                   effort: 1 // Fastest
+               };
+               
+           case '.svg':
+               return {
+                   ...baseSettings,
+                   lossless: true,
+                   effort: 1 // Fastest even for lossless
+               };
+               
+           default:
+               return baseSettings;
        }
    }
 
-   // Auto-detect optimal chunk size based on available memory
-   getOptimalChunkSize() {
-       const totalMemory = os.totalmem();
-       const freeMemory = os.freemem();
-       const availableMemory = Math.min(totalMemory * 0.3, freeMemory * 0.5); // Use 30% of total or 50% of free
-       
-       // Estimate ~10MB per image processing
-       const estimatedMemoryPerImage = 10 * 1024 * 1024;
-       const optimalChunkSize = Math.floor(availableMemory / estimatedMemoryPerImage);
-       
-       // Clamp between 10 and 100 images per chunk
-       return Math.max(10, Math.min(100, optimalChunkSize));
+   // Get progressive update interval based on file count
+   getProgressInterval(totalFiles) {
+       return 1; // Always update every file for real-time progress
+   }
+
+   // Helper method for formatBytes
+   formatBytes(bytes) {
+       if (bytes === 0) return '0 B';
+       const k = 1024;
+       const sizes = ['B', 'KB', 'MB', 'GB'];
+       const i = Math.floor(Math.log(bytes) / Math.log(k));
+       const size = parseFloat((bytes / Math.pow(k, i)).toFixed(2));
+       return size + ' ' + sizes[i];
    }
 
    // Scan folder recursively for image files
    async scanForImages(folderPath) {
        try {
            console.log('=== SCANNING FOLDER RECURSIVELY ===');
-           console.log('Root folder:', folderPath);
-           
            const imageFiles = [];
            
-           // Rekursywna funkcja do skanowania folderów
            const scanRecursively = async (currentPath, depth = 0) => {
-               console.log(`${'  '.repeat(depth)}Scanning: ${currentPath}`);
+               // Check for cancellation during scan
+               if (this.isCancelled) {
+                   throw new Error('Scanning cancelled by user');
+               }
                
                const files = await fs.readdir(currentPath, { withFileTypes: true });
                
                for (const file of files) {
+                   if (this.isCancelled) {
+                       throw new Error('Scanning cancelled by user');
+                   }
+                   
                    const fullPath = path.join(currentPath, file.name);
                    
                    if (file.isFile()) {
                        const ext = path.extname(file.name).toLowerCase();
-                       console.log(`${'  '.repeat(depth + 1)}File: ${file.name}, Extension: ${ext}, Supported: ${this.supportedFormats.includes(ext)}`);
                        
                        if (this.supportedFormats.includes(ext)) {
                            imageFiles.push({
@@ -122,49 +130,43 @@ class ImageProcessor {
                            });
                        }
                    } else if (file.isDirectory()) {
-                       console.log(`${'  '.repeat(depth + 1)}Folder: ${file.name} - scanning recursively...`);
-                       // Rekursywnie skanuj podfolder
                        await scanRecursively(fullPath, depth + 1);
                    }
                }
            };
            
-           // Rozpocznij skanowanie od głównego folderu
            await scanRecursively(folderPath);
            
-           console.log('=== SCAN COMPLETE ===');
-           console.log('Total image files found:', imageFiles.length);
-           console.log('Image files details:', imageFiles.map(f => ({
-               name: f.name,
-               path: f.relativePath
-           })));
-           console.log('======================');
-
+           console.log(`Found ${imageFiles.length} image files`);
            return imageFiles;
        } catch (error) {
+           if (this.isCancelled || error.message.includes('cancelled')) {
+               throw new Error('Folder scanning was cancelled by user');
+           }
            throw new Error(`Failed to scan folder: ${error.message}`);
        }
    }
 
    // Create output folder with smart naming
    async createOutputFolder(inputPath) {
+       if (this.isCancelled) {
+           throw new Error('Cancelled before creating output folder');
+       }
+       
        const inputStats = await fs.stat(inputPath);
        let outputPath;
 
        if (inputStats.isDirectory()) {
-           // Folder input: add "_compressed" suffix
            const folderName = path.basename(inputPath);
            const parentDir = path.dirname(inputPath);
            outputPath = path.join(parentDir, `${folderName}_compressed`);
        } else {
-           // File input: create "compressed_images" folder in same directory
            const parentDir = path.dirname(inputPath);
            outputPath = path.join(parentDir, 'compressed_images');
        }
 
        try {
            await fs.access(outputPath);
-           // If folder exists, add timestamp
            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
            outputPath = `${outputPath}_${timestamp}`;
        } catch {
@@ -172,91 +174,75 @@ class ImageProcessor {
        }
 
        await fs.mkdir(outputPath, { recursive: true });
+       this.currentOutputPath = outputPath; // Store for cleanup
        return outputPath;
    }
 
-   // Process images in chunks
+   // Main processing method with Sharp sequential pipeline
    async processImages(inputPath, progressCallback = null) {
        this.progressCallback = progressCallback;
        this.isCancelled = false;
+       this.processingStartTime = null;
+       this.processedCount = 0;
+       this.avgProcessingTime = 0;
+       this.currentOutputPath = null;
+       this.tempDirectories = [];
 
        try {
-           // Initialize imagemin modules
-           this.updateProgress(0, 0, 0, 'Initializing compression modules...');
-           await this.initializeImagemin();
-
            // Scan for images
            this.updateProgress(0, 0, 0, 'Scanning for images...');
            const imageFiles = await this.scanForImages(inputPath);
+
+           if (this.isCancelled) {
+               throw new Error('Processing cancelled during scan');
+           }
 
            if (imageFiles.length === 0) {
                throw new Error('No supported image files found in the selected folder. Supported formats: JPG, PNG, GIF, SVG, TIFF, BMP');
            }
 
+           const progressInterval = this.getProgressInterval(imageFiles.length);
+
+           console.log(`=== SHARP SEQUENTIAL PROCESSING ===`);
+           console.log(`Files: ${imageFiles.length}, Progress interval: ${progressInterval}`);
+
            // Measure input file sizes
            this.updateProgress(0, imageFiles.length, 0, 'Measuring file sizes...');
            await this.sizeAnalyzer.measureInputSizes(imageFiles);
+
+           if (this.isCancelled) {
+               throw new Error('Processing cancelled during input measurement');
+           }
 
            // Create output folder
            this.updateProgress(0, imageFiles.length, 0, 'Creating output folder...');
            const outputPath = await this.createOutputFolder(inputPath);
 
-           // Process in chunks
-           const chunkSize = this.getOptimalChunkSize();
-           const totalFiles = imageFiles.length;
-           let processedFiles = 0;
-           const results = [];
-
-           console.log(`Processing ${totalFiles} images in chunks of ${chunkSize}`);
-
-           for (let i = 0; i < imageFiles.length; i += chunkSize) {
-               if (this.isCancelled) break;
-
-               const chunk = imageFiles.slice(i, i + chunkSize);
-               const chunkNum = Math.floor(i / chunkSize) + 1;
-               const totalChunks = Math.ceil(imageFiles.length / chunkSize);
-
-               this.updateProgress(
-                   processedFiles, 
-                   totalFiles, 
-                   (processedFiles / totalFiles) * 100,
-                   `Processing chunk ${chunkNum}/${totalChunks}...`
-               );
-
-               try {
-                   const chunkResults = await this.processChunk(chunk, outputPath, processedFiles, totalFiles);
-                   results.push(...chunkResults);
-                   processedFiles += chunk.length;
-
-                   this.updateProgress(
-                       processedFiles, 
-                       totalFiles, 
-                       (processedFiles / totalFiles) * 100,
-                       `Completed ${processedFiles}/${totalFiles} images`
-                   );
-               } catch (error) {
-                   console.error(`Error processing chunk ${chunkNum}:`, error);
-                   // Continue with next chunk instead of failing completely
-               }
+           if (this.isCancelled) {
+               throw new Error('Processing cancelled during output folder creation');
            }
 
+           // Process with Sharp sequential pipeline
+           const results = await this.processSharpSequential(
+               imageFiles, 
+               outputPath, 
+               progressInterval
+           );
+
            if (this.isCancelled) {
+               await this.performCleanup();
                throw new Error('Processing was cancelled by user');
            }
 
-           // Measure output file sizes and calculate stats
-           this.updateProgress(processedFiles, totalFiles, 100, 'Calculating compression statistics...');
+           // Calculate final stats
+           const successfulFiles = results.filter(r => r.success).length;
+           this.updateProgress(successfulFiles, imageFiles.length, 100, 'Calculating compression statistics...');
            await this.sizeAnalyzer.measureOutputSizes(outputPath, results);
            const compressionStats = this.sizeAnalyzer.calculateStats();
            const formattedStats = this.sizeAnalyzer.formatStatsForUI(compressionStats);
 
-           // Count successful results
-           const successfulFiles = results.filter(r => r.success).length;
            console.log(`=== FINAL RESULTS ===`);
-           console.log(`Total results: ${results.length}`);
-           console.log(`Successful: ${successfulFiles}`);
-           console.log(`Results details:`, results.map(r => ({ original: r.original, success: r.success })));
-           console.log(`==================`);
+           console.log(`Successful: ${successfulFiles}/${imageFiles.length}`);
 
            return {
                success: true,
@@ -269,177 +255,283 @@ class ImageProcessor {
 
        } catch (error) {
            this.sizeAnalyzer.reset();
+           
+           // Perform cleanup if cancelled
+           if (this.isCancelled || error.message.includes('cancelled')) {
+               await this.performCleanup();
+           }
+           
            throw new Error(`Image processing failed: ${error.message}`);
        }
    }
 
-   // Process a single chunk of images
-   async processChunk(imageFiles, outputPath, currentOffset = 0, totalFiles = 0) {
-       console.log(`Processing chunk: ${imageFiles.length} files`);
+   // Sharp sequential processing - one file at a time with native performance
+   async processSharpSequential(imageFiles, outputPath, progressInterval) {
+       console.log(`=== SHARP SEQUENTIAL START ===`);
        
-       await this.initializeImagemin(); // Ensure imagemin is loaded
-
-       // Try direct processing first (without sanitizer)
-       const inputPaths = imageFiles.map(file => file.fullPath);
-
-       try {
-           console.log('Attempting direct processing...');
-           const files = await this.imagemin(inputPaths, {
-               destination: outputPath,
-               plugins: this.plugins
-           });
-           
-           console.log(`Direct processing result: ${files.length}/${imageFiles.length} files`);
-
-           // Check if some files were skipped (problematic names)
-           if (files.length < imageFiles.length) {
-               console.log('Some files were skipped - processing individually...');
-               return await this.processIndividually(imageFiles, outputPath, currentOffset, totalFiles);
-           }
-
-           // All files processed successfully - direct rename
-           const renamePromises = files.map(async (file, index) => {
-               const oldPath = file.destinationPath;
-               const newPath = oldPath.replace(/\.(jpe?g|png|gif|svg|tiff?|bmp|webp)$/i, '.webp');
-
-               // Update progress for each file
-               const currentFileIndex = currentOffset + index + 1;
-               this.updateProgress(
-                   currentFileIndex, 
-                   totalFiles, 
-                   (currentFileIndex / totalFiles) * 100,
-                   `Processing: ${path.basename(file.sourcePath)}`
-               );
-
-               if (oldPath !== newPath) {
-                   try {
-                       await fs.rename(oldPath, newPath);
-                       return {
-                           original: path.basename(file.sourcePath),
-                           compressed: path.basename(newPath),
-                           success: true
-                       };
-                   } catch (error) {
-                       return {
-                           original: path.basename(file.sourcePath),
-                           error: error.message,
-                           success: false
-                       };
-                   }
-               }
-               return {
-                   original: path.basename(file.sourcePath),
-                   compressed: path.basename(oldPath),
-                   success: true
-               };
-           });
-
-           return await Promise.all(renamePromises);
-           
-       } catch (error) {
-           // Direct processing failed - try individually
-           console.log('Direct processing failed, processing individually...');
-           return await this.processIndividually(imageFiles, outputPath, currentOffset, totalFiles);
-       }
-   }
-
-   // Process files individually - only problematic ones get sanitized
-   async processIndividually(imageFiles, outputPath, currentOffset = 0, totalFiles = 0) {
-       console.log('=== PROCESSING INDIVIDUALLY ===');
        const results = [];
+       this.processingStartTime = Date.now();
+       let lastProgressUpdate = 0;
        
+       // Create temp directory for sanitized files (if needed)
+       const tempDirName = this.sanitizer.getTempDirName();
+       const tempDir = path.join(outputPath, '..', tempDirName);
+       let tempDirCreated = false;
+
        for (let i = 0; i < imageFiles.length; i++) {
-           const imageFile = imageFiles[i];
-           const currentFileIndex = currentOffset + i + 1;
+           // Check for cancellation at start of each iteration
+           if (this.isCancelled) {
+               console.log(`=== PROCESSING CANCELLED AT FILE ${i + 1}/${imageFiles.length} ===`);
+               break;
+           }
            
-           // Update progress for each individual file
-           this.updateProgress(
-               currentFileIndex, 
-               totalFiles || imageFiles.length, 
-               (currentFileIndex / (totalFiles || imageFiles.length)) * 100,
-               `Processing: ${imageFile.name}`
-           );
-
+           const file = imageFiles[i];
+           const fileStartTime = Date.now();
+           
            try {
-               // Try direct processing for single file
-               const files = await this.imagemin([imageFile.fullPath], {
-                   destination: outputPath,
-                   plugins: this.plugins
-               });
-               
-               if (files.length > 0) {
-                   // Success - direct rename
-                   const file = files[0];
-                   const oldPath = file.destinationPath;
-                   const newPath = oldPath.replace(/\.(jpe?g|png|gif|svg|tiff?|bmp|webp)$/i, '.webp');
-
-                   if (oldPath !== newPath) {
-                       await fs.rename(oldPath, newPath);
-                   }
-                   
-                   results.push({
-                       original: imageFile.name,
-                       compressed: path.basename(newPath),
-                       success: true
-                   });
-                   console.log(`✓ Direct: ${imageFile.name}`);
-               } else {
-                   // File skipped - use sanitizer for this one file
-                   console.log(`⚠ Sanitizing: ${imageFile.name}`);
-                   
-                   // Inline sanitizer for single file
-                   const tempDirName = this.sanitizer.getTempDirName();
-                   const tempDir = path.join(outputPath, '..', tempDirName);
-                   
-                   try {
-                       const tempFiles = await this.sanitizer.createTempFiles([imageFile], tempDir);
-                       const inputPaths = tempFiles.map(file => file.tempPath);
-
-                       const sanitizedFiles = await this.imagemin(inputPaths, {
-                           destination: outputPath,
-                           plugins: this.plugins
-                       });
-                       
-                       if (sanitizedFiles.length > 0) {
-                           const restoredFiles = await this.sanitizer.restoreOriginalNames(sanitizedFiles, outputPath);
-                           results.push(...restoredFiles);
-                           console.log(`✓ Sanitized: ${imageFile.name}`);
-                       } else {
-                           results.push({
-                               original: imageFile.name,
-                               error: 'Sanitizer failed to process file',
-                               success: false
-                           });
-                       }
-                       
-                       // Clean up temp directory
-                       await this.sanitizer.cleanup(tempDir);
-                   } catch (sanitizerError) {
-                       await this.sanitizer.cleanup(tempDir);
-                       results.push({
-                           original: imageFile.name,
-                           error: sanitizerError.message,
-                           success: false
-                       });
-                   }
+               // Double-check cancellation before processing each file
+               if (this.isCancelled) {
+                   console.log(`=== CANCELLATION DETECTED BEFORE PROCESSING ${file.name} ===`);
+                   break;
                }
+               
+               // Check if output directory still exists (user might have deleted it)
+               try {
+                   await fs.access(outputPath);
+               } catch {
+                   throw new Error('Output folder was removed - processing cancelled');
+               }
+               
+               let result;
+               
+               // Check if file needs sanitization
+               if (this.needsSanitization(file.name)) {
+                   // Create temp dir only when first needed
+                   if (!tempDirCreated) {
+                       await fs.mkdir(tempDir, { recursive: true });
+                       tempDirCreated = true;
+                       this.tempDirectories.push(tempDir);
+                   }
+                   
+                   result = await this.processSharpSanitized(file, outputPath, tempDir);
+               } else {
+                   result = await this.processSharpClean(file, outputPath);
+               }
+               
+               results.push(result);
+               
+               // Update processing time statistics
+               const fileProcessTime = Date.now() - fileStartTime;
+               this.updateProcessingStats(fileProcessTime);
+               
+               this.processedCount++;
+               
+               // Smart progress updates - update EVERY file for real-time feedback
+               const currentProgress = (this.processedCount / imageFiles.length) * 100;
+               const etaMessage = this.calculateETA(imageFiles.length);
+               
+               this.updateProgress(
+                   this.processedCount,
+                   imageFiles.length,
+                   currentProgress,
+                   `${file.name}${etaMessage}`
+               );
+               console.log(`[${this.processedCount}/${imageFiles.length}] Processed: ${file.name}`);
+               
            } catch (error) {
-               console.log(`✗ Failed: ${imageFile.name} - ${error.message}`);
+               // Check if error is due to cancellation
+               if (this.isCancelled || error.message.includes('cancelled')) {
+                   console.log(`=== PROCESSING CANCELLED DURING ${file.name} ===`);
+                   break;
+               }
+               
+               console.error(`Error processing ${file.name}:`, error.message);
                results.push({
-                   original: imageFile.name,
+                   original: file.name,
                    error: error.message,
                    success: false
                });
+               this.processedCount++;
            }
        }
        
+       // Cleanup temp directory if it was created
+       if (tempDirCreated && !this.isCancelled) {
+           try {
+               await fs.rm(tempDir, { recursive: true, force: true });
+               this.tempDirectories = this.tempDirectories.filter(dir => dir !== tempDir);
+           } catch (error) {
+               console.warn('Failed to cleanup temp directory:', error.message);
+           }
+       }
+       
+       console.log(`=== SHARP SEQUENTIAL COMPLETE ===`);
        return results;
    }
 
-   // Update progress
+   // Check if filename needs sanitization
+   needsSanitization(filename) {
+       return /[^\w\s\-_.()[\]]/g.test(filename);
+   }
+
+   // Process a clean file with Sharp (no problematic characters)
+   async processSharpClean(file, outputPath) {
+       try {
+           // Check cancellation before processing
+           if (this.isCancelled) {
+               throw new Error('Processing cancelled before Sharp processing');
+           }
+           
+           const outputBaseName = path.basename(file.name, path.extname(file.name));
+           const outputFileName = outputBaseName + '.webp';
+           const outputFilePath = path.join(outputPath, outputFileName);
+           
+           // Get Sharp WebP settings for this file type
+           const webpSettings = this.getWebPSettings(file.extension, file.fullPath);
+           
+           // Process with Sharp - streaming for memory efficiency
+           await sharp(file.fullPath)
+               .webp(webpSettings)
+               .toFile(outputFilePath);
+           
+           // Final cancellation check after processing
+           if (this.isCancelled) {
+               // Clean up the file we just created
+               try {
+                   await fs.unlink(outputFilePath);
+               } catch (e) {
+                   // Ignore cleanup errors
+               }
+               throw new Error('Processing cancelled after Sharp processing');
+           }
+           
+           return {
+               original: file.name,
+               compressed: outputFileName,
+               success: true,
+               finalPath: outputFilePath
+           };
+           
+       } catch (error) {
+           // Check if cancellation error
+           if (this.isCancelled || error.message.includes('cancelled')) {
+               throw error;
+           }
+           
+           // Handle specific Sharp errors
+           if (error.message.includes('Input file is missing')) {
+               throw new Error(`File not found: ${file.name}`);
+           } else if (error.message.includes('Input file contains unsupported image format')) {
+               throw new Error(`Unsupported format in ${file.name}`);
+           } else if (error.message.includes('Input image exceeds pixel limit')) {
+               throw new Error(`Image too large: ${file.name}`);
+           } else {
+               throw new Error(`Sharp processing failed for ${file.name}: ${error.message}`);
+           }
+       }
+   }
+
+   // Process a file that needs sanitization with Sharp
+   async processSharpSanitized(file, outputPath, tempDir) {
+       try {
+           // Check cancellation before processing
+           if (this.isCancelled) {
+               throw new Error('Processing cancelled before sanitized Sharp processing');
+           }
+           
+           // Create sanitized temp file
+           const sanitizedName = this.sanitizer.sanitizeFileName(file.name);
+           const tempPath = path.join(tempDir, sanitizedName);
+           
+           // Copy to temp location with sanitized name
+           await fs.copyFile(file.fullPath, tempPath);
+           
+           // Process the sanitized file with Sharp
+           const originalBaseName = path.basename(file.name, path.extname(file.name));
+           const finalName = originalBaseName + '.webp';
+           const finalPath = path.join(outputPath, finalName);
+           
+           // Get Sharp WebP settings for this file type
+           const webpSettings = this.getWebPSettings(file.extension, tempPath);
+           
+           // Process with Sharp
+           await sharp(tempPath)
+               .webp(webpSettings)
+               .toFile(finalPath);
+           
+           // Clean up temp file immediately
+           try {
+               await fs.unlink(tempPath);
+           } catch (e) {
+               // Ignore cleanup errors
+           }
+           
+           // Final cancellation check after processing
+           if (this.isCancelled) {
+               // Clean up the final file we just created
+               try {
+                   await fs.unlink(finalPath);
+               } catch (e) {
+                   // Ignore cleanup errors
+               }
+               throw new Error('Processing cancelled after sanitized Sharp processing');
+           }
+           
+           return {
+               original: file.name,
+               compressed: finalName,
+               success: true,
+               finalPath: finalPath
+           };
+           
+       } catch (error) {
+           // Check if cancellation error
+           if (this.isCancelled || error.message.includes('cancelled')) {
+               throw error;
+           }
+           
+           throw new Error(`Sharp sanitized processing failed for ${file.name}: ${error.message}`);
+       }
+   }
+
+   // Update processing time statistics for ETA calculation
+   updateProcessingStats(processingTime) {
+       if (this.processedCount === 0) {
+           this.avgProcessingTime = processingTime;
+       } else {
+           // Rolling average with more weight on recent files
+           this.avgProcessingTime = (this.avgProcessingTime * 0.7) + (processingTime * 0.3);
+       }
+   }
+
+   // Calculate ETA based on processing statistics
+   calculateETA(totalFiles) {
+       if (this.processedCount === 0 || !this.processingStartTime || this.isCancelled) {
+           return ' • calculating time...';
+       }
+       
+       const remainingFiles = totalFiles - this.processedCount;
+       if (remainingFiles <= 0) {
+           return ' • finishing...';
+       }
+       
+       // Use average processing time for ETA
+       const estimatedMs = remainingFiles * this.avgProcessingTime;
+       const estimatedSeconds = Math.ceil(estimatedMs / 1000);
+       
+       if (estimatedSeconds > 60) {
+           const minutes = Math.ceil(estimatedSeconds / 60);
+           return ` • ~${minutes}min remaining`;
+       } else if (estimatedSeconds > 5) {
+           return ` • ~${estimatedSeconds}s remaining`;
+       } else {
+           return ' • almost done...';
+       }
+   }
+
+   // Update progress with throttling
    updateProgress(current, total, percent, message) {
-       console.log(`Progress Update: ${current}/${total} (${percent.toFixed(1)}%) - ${message}`);
-       if (this.progressCallback) {
+       if (this.progressCallback && !this.isCancelled) {
            this.progressCallback({
                current: current,
                total: total,
@@ -449,9 +541,47 @@ class ImageProcessor {
        }
    }
 
+   // Perform cleanup on cancellation
+   async performCleanup() {
+       console.log('=== PERFORMING CANCELLATION CLEANUP ===');
+       
+       try {
+           // Clean up temp directories
+           for (const tempDir of this.tempDirectories) {
+               try {
+                   await fs.rm(tempDir, { recursive: true, force: true });
+                   console.log(`Cleaned up temp directory: ${tempDir}`);
+               } catch (error) {
+                   console.warn(`Failed to cleanup temp directory ${tempDir}:`, error.message);
+               }
+           }
+           
+           // Optionally clean up output directory if no files were successfully processed
+           if (this.currentOutputPath && this.processedCount === 0) {
+               try {
+                   await fs.rm(this.currentOutputPath, { recursive: true, force: true });
+                   console.log(`Cleaned up empty output directory: ${this.currentOutputPath}`);
+               } catch (error) {
+                   console.warn(`Failed to cleanup output directory:`, error.message);
+               }
+           }
+           
+       } catch (error) {
+           console.error('Error during cleanup:', error);
+       }
+       
+       console.log('=== CLEANUP COMPLETE ===');
+   }
+
    // Cancel processing
-   cancel() {
+   async cancel() {
+       console.log('=== CANCELLATION INITIATED ===');
        this.isCancelled = true;
+       
+       // Perform immediate cleanup
+       await this.performCleanup();
+       
+       console.log('=== CANCELLATION COMPLETE ===');
    }
 }
 
