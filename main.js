@@ -19,10 +19,10 @@ let currentProcessor = null; // Track current processor for cancellation
 
 function createWindow() {
    mainWindow = new BrowserWindow({
-       width: 900,
-       height: 700,
-       minWidth: 600,
-       minHeight: 400,
+       width: 675,
+       height: 750,
+       minWidth: 675,
+       minHeight: 750,
        webPreferences: {
            nodeIntegration: false,
            contextIsolation: true,
@@ -90,7 +90,7 @@ ipcMain.handle('compress-images', async (event, folderPath) => {
        // Throttling variables for progress updates
        let lastProgressSent = 0;
        let lastProgressData = null;
-       const PROGRESS_THROTTLE = 100; // Send max 1 update per 100ms (10 updates per second)
+       const PROGRESS_THROTTLE = 100;
        
        // Setup progress callback with throttling
        const progressCallback = (progressData) => {

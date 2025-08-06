@@ -331,10 +331,10 @@ class ImageProcessor {
                const etaMessage = this.calculateETA(imageFiles.length);
                
                this.updateProgress(
-                   this.processedCount,
-                   imageFiles.length,
-                   currentProgress,
-                   `${file.name}${etaMessage}`
+                this.processedCount,
+                imageFiles.length,
+                currentProgress,
+                file.name  
                );
                console.log(`[${this.processedCount}/${imageFiles.length}] Processed: ${file.name}`);
                
@@ -393,7 +393,8 @@ class ImageProcessor {
            await sharp(file.fullPath)
                .webp(webpSettings)
                .toFile(outputFilePath);
-           
+            
+
            // Final cancellation check after processing
            if (this.isCancelled) {
                // Clean up the file we just created
@@ -458,7 +459,8 @@ class ImageProcessor {
            await sharp(tempPath)
                .webp(webpSettings)
                .toFile(finalPath);
-           
+
+
            // Clean up temp file immediately
            try {
                await fs.unlink(tempPath);
@@ -504,30 +506,30 @@ class ImageProcessor {
        }
    }
 
-   // Calculate ETA based on processing statistics
-   calculateETA(totalFiles) {
-       if (this.processedCount === 0 || !this.processingStartTime || this.isCancelled) {
-           return ' • calculating time...';
-       }
-       
-       const remainingFiles = totalFiles - this.processedCount;
-       if (remainingFiles <= 0) {
-           return ' • finishing...';
-       }
-       
-       // Use average processing time for ETA
-       const estimatedMs = remainingFiles * this.avgProcessingTime;
-       const estimatedSeconds = Math.ceil(estimatedMs / 1000);
-       
-       if (estimatedSeconds > 60) {
-           const minutes = Math.ceil(estimatedSeconds / 60);
-           return ` • ~${minutes}min remaining`;
-       } else if (estimatedSeconds > 5) {
-           return ` • ~${estimatedSeconds}s remaining`;
-       } else {
-           return ' • almost done...';
-       }
+// Calculate ETA based on processing statistics
+calculateETA(totalFiles) {
+   if (this.processedCount === 0 || !this.processingStartTime || this.isCancelled) {
+       return ''; 
    }
+   
+   const remainingFiles = totalFiles - this.processedCount;
+   if (remainingFiles <= 0) {
+       return ' • finishing...';
+   }
+   
+   // Use average processing time for ETA
+   const estimatedMs = remainingFiles * this.avgProcessingTime;
+   const estimatedSeconds = Math.ceil(estimatedMs / 1000);
+   
+   if (estimatedSeconds > 60) {
+       const minutes = Math.ceil(estimatedSeconds / 60);
+       return ` • ~${minutes}min remaining`;
+   } else if (estimatedSeconds > 5) {
+       return ` • ~${estimatedSeconds}s remaining`;
+   } else {
+       return ' • almost done...';
+   }
+}
 
    // Update progress with throttling
    updateProgress(current, total, percent, message) {

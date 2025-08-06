@@ -24,10 +24,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
    // Folder selection function
    selectFolder: () => ipcRenderer.invoke('select-folder'),
    
-   // Compression progress listening
-   onCompressionProgress: (callback) => {
-       ipcRenderer.on('compression-progress', (event, data) => callback(data));
-   },
+    // Compression progress listening  
+    onCompressionProgress: (callback) => {
+        ipcRenderer.on('compression-progress', (event, data) => {
+            callback(data);
+        });
+    },
    
    // Remove all listeners
    removeAllListeners: (channel) => {

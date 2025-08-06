@@ -66,44 +66,34 @@ let lastProgressUpdate = { current: 0, total: 0, rate: 0 };
 
 // Drag and Drop functionality
 dropZone.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    dropZone.classList.add('drag-over');
+   e.preventDefault();
+   dropZone.classList.add('drag-over');
 });
 
 dropZone.addEventListener('dragleave', (e) => {
-    e.preventDefault();
-    dropZone.classList.remove('drag-over');
+   e.preventDefault();
+   dropZone.classList.remove('drag-over');
 });
 
 dropZone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    dropZone.classList.remove('drag-over');
-    
-    console.log('=== RENDERER: Drop event triggered ===');
-    
-    const files = Array.from(e.dataTransfer.files);
-    console.log('=== RENDERER: Dropped files ===', files);
-    
-    if (files.length > 0) {
-        const firstFile = files[0];
-        console.log('=== RENDERER: First file details ===', {
-            name: firstFile.name,
-            type: firstFile.type,
-            size: firstFile.size,
-            path: firstFile.path
-        });
-        
-        // Check if it's a directory by checking path property
-        if (firstFile.path && firstFile.type === '') {
-            selectedFolderPath = firstFile.path;
-            console.log('=== RENDERER: Detected folder path ===', selectedFolderPath);
-            startCompression(selectedFolderPath);
-        } else {
-            showError('Please drop a folder, not individual files.');
-        }
-    } else {
-        showError('Please drop a folder with images.');
-    }
+   e.preventDefault();
+   dropZone.classList.remove('drag-over');
+   
+   const files = Array.from(e.dataTransfer.files);
+   
+   if (files.length > 0) {
+       const firstFile = files[0];
+       
+       // Check if it's a directory by checking path property
+       if (firstFile.path && firstFile.type === '') {
+           selectedFolderPath = firstFile.path;
+           startCompression(selectedFolderPath);
+       } else {
+           showError('Please drop a folder, not individual files.');
+       }
+   } else {
+       showError('Please drop a folder with images.');
+   }
 });
 
 // Select folder button
@@ -122,7 +112,6 @@ selectButton.addEventListener('click', async () => {
 // Cancel button - REAL CANCELLATION
 cancelButton.addEventListener('click', async () => {
     if (isProcessing && !isCancelling) {
-        console.log('=== CANCELLATION REQUESTED ===');
         isCancelling = true;
         
         // Update UI immediately to show cancelling state
@@ -134,7 +123,6 @@ cancelButton.addEventListener('click', async () => {
         try {
             // Send cancellation signal to main process
             await window.electronAPI.cancelCompression();
-            console.log('=== CANCELLATION SIGNAL SENT ===');
         } catch (error) {
             console.error('Error sending cancellation signal:', error);
         }
@@ -184,17 +172,25 @@ function updateTimer() {
         
         // Update only timer part of title
         if (!isCancelling) {
-            progressTitle.textContent = 'Processing images...' + timeRemaining;
+            progressTitle.innerHTML = 'Processing images...<br>' + timeRemaining;
         }
     } else if (elapsed < 5 && !isCancelling) {
-        // Show "calculating..." for first few seconds
-        progressTitle.textContent = 'Processing images... • calculating time...';
+        // Don't show anything until time is calculated
+        progressTitle.innerHTML = 'Processing images...';
     }
-}
+} 
 
 // Start compression process
 async function startCompression(folderPath) {
     if (isProcessing) return;
+
+    // Cleanup and re-setup progress listener
+    window.electronAPI.removeAllListeners('compression-progress');
+    window.electronAPI.onCompressionProgress((progressData) => {
+        if (!isCancelling) {
+            updateProgress(progressData.current, progressData.total, progressData.percent, progressData.message);
+        }
+    });
 
     // Reset and cleanup timer
     if (timerInterval) {
@@ -362,6 +358,7 @@ function resetToInitialState() {
     isCancelling = false;
     selectedFolderPath = null;
     
+
     // Reset cancel button
     cancelButton.textContent = 'Cancel';
     cancelButton.disabled = false;

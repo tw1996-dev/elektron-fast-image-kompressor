@@ -174,13 +174,18 @@ class FileSizeAnalyzer {
     // Format bytes to human readable format
     formatBytes(bytes) {
         if (bytes === 0) return '0 B';
+
+        const isNegative = bytes < 0;
+        const absoluteBytes = Math.abs(bytes);
         
         const k = 1024;
         const sizes = ['B', 'KB', 'MB', 'GB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        const i = Math.floor(Math.log(absoluteBytes) / Math.log(k));
         
-        const size = parseFloat((bytes / Math.pow(k, i)).toFixed(2));
-        return size + ' ' + sizes[i];
+        const size = parseFloat((absoluteBytes / Math.pow(k, i)).toFixed(2));
+        const result = size + ' ' + sizes[i];
+        
+        return isNegative ? '-' + result : result;
     }
 
     // Get detailed file-by-file comparison
